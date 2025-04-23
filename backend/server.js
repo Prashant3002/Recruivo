@@ -12,6 +12,9 @@ dotenv.config({ path: './.env' });
 const Student = require('./models/Student');
 const User = require('./models/User');
 
+// Import routes
+const studentRoutes = require('./routes/studentRoutes');
+
 // Initialize Express app
 const app = express();
 
@@ -32,6 +35,9 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/recruivo'
 app.get('/', (req, res) => {
   res.send('Backend API is running');
 });
+
+// Use routes
+app.use('/api/students', studentRoutes);
 
 // Authentication routes
 app.post('/api/auth/register', async (req, res) => {
@@ -148,70 +154,6 @@ app.get('/api/me', authenticate, async (req, res) => {
     email: req.user.email,
     role: req.user.role
   });
-});
-
-// Student routes
-app.get('/api/students', async (req, res) => {
-  try {
-    const students = await Student.find({});
-    res.json(students);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Route to create a new student
-app.post('/api/students', async (req, res) => {
-  try {
-    const student = new Student(req.body);
-    await student.save();
-    res.status(201).json(student);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-// Route to get a student by ID
-app.get('/api/students/:id', async (req, res) => {
-  try {
-    const student = await Student.findById(req.params.id);
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-    res.json(student);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Route to update a student
-app.put('/api/students/:id', async (req, res) => {
-  try {
-    const student = await Student.findByIdAndUpdate(
-      req.params.id, 
-      req.body, 
-      { new: true, runValidators: true }
-    );
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-    res.json(student);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-// Route to delete a student
-app.delete('/api/students/:id', async (req, res) => {
-  try {
-    const student = await Student.findByIdAndDelete(req.params.id);
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-    res.json({ message: 'Student deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
 });
 
 // Start server
