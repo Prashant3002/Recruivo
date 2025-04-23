@@ -1,144 +1,101 @@
-import { NextResponse, NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
-// Define routes that should bypass authentication
-const PUBLIC_ROUTES = [
-  '/',
-  '/login',
-  '/register',
-  '/api/jobs/simple-apply',
-  '/api/jobs/hardcoded-apply',
-  '/api/auth/login',
-  '/api/auth/register',
-  '/api/auth/logout',
-  '/api/auth/session',
-  '/api/auth/signin',
-  '/api/auth/signout',
-  '/api/auth/callback',
-  '/api/auth/verify-request',
-  '/api/auth/error',
-  '/api/auth/csrf',
-  '/api/auth/providers',
+// Configuration for paths that require authentication
+const PROTECTED_PATHS = [
+  '/dashboard',
+  '/profile',
+  '/applications',
+  '/student',
+  '/recruiter',
+  '/admin',
 ];
 
-// Export the middleware function as the default export
+// Configuration for paths that are only accessible to specific roles
+const ROLE_PATHS = {
+  student: ['/student'],
+  recruiter: ['/recruiter'],
+  admin: ['/admin'],
+};
+
+// Paths that are authentication-related and should be accessible for redirects
+const AUTH_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
+
+// The middleware function, which will run before each request
 export async function middleware(request: NextRequest) {
-  // Get auth token from various places
-  const authToken = request.cookies.get('token')?.value 
-    || request.cookies.get('authToken')?.value;
+  const { pathname } = request.nextUrl;
   
-  // Check cookies directly in case NextAuth token is not available
-  const isLoggedInCookie = request.cookies.get('isLoggedIn')?.value === 'true';
-  
-  // Get NextAuth token
-  const token = await getToken({ req: request });
-  
-  // Determine if authenticated by any method
-  const isAuthenticated = !!token || !!authToken || isLoggedInCookie;
-  
-  console.log('Middleware executing for path:', request.nextUrl.pathname);
-  console.log('Authentication status:', isAuthenticated ? 'Authenticated' : 'Not authenticated');
-  console.log('Auth token exists:', !!authToken);
-  console.log('IsLoggedIn cookie:', isLoggedInCookie);
-  console.log('NextAuth token exists:', !!token);
-  
-  // Get the pathname from the URL
-  const pathname = request.nextUrl.pathname;
-  
-  // Add no-cache headers for real-time API routes
-  if (pathname.startsWith('/api/recruiter/candidates')) {
-    const response = NextResponse.next();
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    response.headers.set('Pragma', 'no-cache');
-    response.headers.set('Expires', '0');
-    response.headers.set('Surrogate-Control', 'no-store');
-    return response;
-  }
-  
-  // Check if the route is public
-  const isPublicRoute = PUBLIC_ROUTES.some(route => 
-    pathname === route || pathname.startsWith(`${route}/`)
-  );
-  
-  if (isPublicRoute) {
+  // Skip middleware for api routes and static files
+  if (
+    pathname.startsWith('/_next') || 
+    pathname.startsWith('/api') || 
+    pathname.includes('.') || 
+    pathname.startsWith('/static')
+  ) {
     return NextResponse.next();
   }
   
-  // Check if this is any auth-related API path
-  const isAuthPath = pathname.startsWith('/api/auth/');
+  // Check if the path requires authentication
+  const isProtectedPath = PROTECTED_PATHS.some(path => pathname.startsWith(path));
   
-  // Allow all auth-related API paths and bypass paths without authentication
-  if (isAuthPath) {
-    console.log('Bypassing auth check for API path:', pathname);
-    return NextResponse.next();
+  // Get the user's authentication token from the request
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
+  
+  // If the path requires authentication and the user is not authenticated, redirect to login
+  if (isProtectedPath && !token) {
+    const url = new URL('/login', request.url);
+    url.searchParams.set('callbackUrl', encodeURI(pathname));
+    return NextResponse.redirect(url);
   }
   
-  // API path but not one of the auth or bypass paths
-  const isApiPath = pathname.startsWith('/api/');
-  
-  // Handle API routes that aren't in the bypass list
-  if (isApiPath && !isAuthenticated) {
-    console.log('API route access attempted without authentication:', pathname);
-    // For API routes, return JSON response instead of redirect
-    return new NextResponse(
-      JSON.stringify({ 
-        success: false, 
-        message: 'Authentication required',
-        // Include a feature flag to let the client know to use fallback endpoints
-        useFallback: true
-      }),
-      { 
-        status: 401,
-        headers: { 'content-type': 'application/json' }
-      }
-    );
-  }
-  
-  // Check if we just came from login page to avoid immediate redirect
-  const referer = request.headers.get('referer') || '';
-  const isPostLogin = referer.includes('/login') && 
-    (pathname.includes('/student') || pathname.includes('/recruiter') || pathname.includes('/admin'));
-  
-  // Skip redirect right after login to allow token to be properly set
-  if (isPostLogin) {
-    console.log('Post-login request detected, skipping auth check to allow redirection');
-    return NextResponse.next();
-  }
-  
-  // Route protection based on role
-  if (isAuthenticated) {
-    const userRole = token?.role as string || '';
+  // If the user is authenticated, check role-based access
+  if (token?.role && isProtectedPath) {
+    const userRole = token.role as string;
     
-    // If token exists, use its role, otherwise check cookie-based auth
-    // For cookie-based auth without token, allow access since we can't verify role
-    if (token) {
-      // Student routes
-      if (pathname.startsWith('/student/') && userRole !== 'student') {
-        console.log('Unauthorized access: Non-student trying to access student routes');
-        return NextResponse.redirect(new URL('/', request.url));
-      }
+    // Check if the path is restricted to specific roles
+    let isRoleRestricted = false;
+    let hasAccess = false;
+    
+    // Check each role path configuration
+    for (const [role, paths] of Object.entries(ROLE_PATHS)) {
+      const isPathForRole = paths.some(path => pathname.startsWith(path));
       
-      // Recruiter routes
-      if (pathname.startsWith('/recruiter/') && userRole !== 'recruiter') {
-        console.log('Unauthorized access: Non-recruiter trying to access recruiter routes');
-        return NextResponse.redirect(new URL('/', request.url));
+      if (isPathForRole) {
+        isRoleRestricted = true;
+        hasAccess = role === userRole;
+        break;
       }
-      
-      // Admin routes
-      if (pathname.startsWith('/admin/') && userRole !== 'admin') {
-        console.log('Unauthorized access: Non-admin trying to access admin routes');
-        return NextResponse.redirect(new URL('/', request.url));
-      }
+    }
+    
+    // If the path is restricted to roles and the user doesn't have access, redirect to dashboard
+    if (isRoleRestricted && !hasAccess) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
     }
   }
   
+  // If the user is authenticated and trying to access auth pages, redirect to dashboard
+  if (token && AUTH_PATHS.some(path => pathname === path)) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+  
+  // Allow the request to proceed
   return NextResponse.next();
 }
 
-// Configure which routes the middleware should run on
+// Configure paths that should be matched by this middleware
 export const config = {
   matcher: [
-    // Apply to all routes except static files, api health checks, and NextAuth routes
-    '/((?!_next/static|_next/image|favicon.ico|health|api/auth/\\[\\.\\.\\.|api/auth/callback|api/auth/session|api/auth/csrf).*)',
+    /*
+     * Match all paths except:
+     * 1. /api routes
+     * 2. /_next (Next.js internals)
+     * 3. /static (static files)
+     * 4. all root files inside /public (robots.txt, favicon.ico, etc.)
+     */
+    '/((?!api|_next|static|favicon.ico|manifest.json).*)',
   ],
 }; 
