@@ -1,0 +1,159 @@
+import { NextRequest, NextResponse } from 'next/server';
+import dbConnect from '@/lib/mongoose';
+import { Application, Job } from '@/lib/models';
+import { withAuth } from '@/lib/auth';
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { connectToDatabase } from "@/lib/mongodb"
+
+// Get applications (different behavior based on user role)
+export const GET = withAuth(async (req: NextRequest, user) => {
+  try {
+    await dbConnect();
+    
+    const url = new URL(req.url);
+    const status = url.searchParams.get('status') || '';
+    const jobId = url.searchParams.get('job') || '';
+    const limit = parseInt(url.searchParams.get('limit') || '10');
+    const page = parseInt(url.searchParams.get('page') || '1');
+    
+    // Build filter object
+    const filter: any = {};
+    
+    // Filter based on user role
+    if (user.role === 'student') {
+      // Students can only see their own applications
+      filter.student = user.userId;
+    } else if (user.role === 'recruiter') {
+      // Recruiters can see applications for jobs they posted
+      if (jobId) {
+        // If specific job is requested, check if recruiter owns the job
+        const job = await Job.findById(jobId);
+        if (!job || job.recruiter.toString() !== user.userId) {
+          return NextResponse.json(
+            { error: 'Not authorized to view these applications' },
+            { status: 403 }
+          );
+        }
+        filter.job = jobId;
+      } else {
+        // If no specific job, get applications for all jobs by this recruiter
+        const recruiterJobs = await Job.find({ recruiter: user.userId }).select('_id');
+        filter.job = { $in: recruiterJobs.map(job => job._id) };
+      }
+    }
+    // Admin can see all applications, no additional filter needed
+    
+    // Add status filter if provided
+    if (status) {
+      filter.status = status;
+    }
+    
+    // Calculate pagination
+    const skip = (page - 1) * limit;
+    
+    // Get applications with pagination
+    const applications = await Application.find(filter)
+      .populate('student', 'name email')
+      .populate({
+        path: 'job',
+        select: 'title company',
+        populate: {
+          path: 'company',
+          select: 'name logo'
+        }
+      })
+      .sort({ applicationDate: -1 })
+      .skip(skip)
+      .limit(limit);
+    
+    // Get total count for pagination
+    const total = await Application.countDocuments(filter);
+    
+    return NextResponse.json({
+      applications,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        limit,
+      },
+    });
+  } catch (error: any) {
+    console.error('Get applications error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to get applications' },
+      { status: 500 }
+    );
+  }
+}, ['student', 'recruiter', 'admin']);
+
+// Create a new application (students only)
+export const POST = withAuth(async (req: NextRequest, user) => {
+  try {
+    if (user.role !== 'student') {
+      return NextResponse.json(
+        { error: 'Only students can apply to jobs' },
+        { status: 403 }
+      );
+    }
+    
+    await dbConnect();
+    
+    const body = await req.json();
+    const { job, resume, coverLetter } = body;
+    
+    // Check if job exists
+    const jobExists = await Job.findById(job);
+    if (!jobExists) {
+      return NextResponse.json(
+        { error: 'Job not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Check if job is open
+    if (jobExists.status !== 'open') {
+      return NextResponse.json(
+        { error: 'This job is not accepting applications' },
+        { status: 400 }
+      );
+    }
+    
+    // Check if student has already applied to this job
+    const existingApplication = await Application.findOne({
+      student: user.userId,
+      job,
+    });
+    
+    if (existingApplication) {
+      return NextResponse.json(
+        { error: 'You have already applied to this job' },
+        { status: 400 }
+      );
+    }
+    
+    // Create application
+    const application = await Application.create({
+      student: user.userId,
+      job,
+      resume,
+      coverLetter,
+      status: 'pending',
+      applicationDate: new Date(),
+    });
+    
+    // Increment application count on job
+    await Job.findByIdAndUpdate(job, {
+      $inc: { applicationCount: 1 },
+    });
+    
+    return NextResponse.json({ application }, { status: 201 });
+  } catch (error: any) {
+    console.error('Create application error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to create application' },
+      { status: 500 }
+    );
+  }
+}, ['student']); 
