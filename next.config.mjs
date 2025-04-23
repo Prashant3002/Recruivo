@@ -16,11 +16,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ['mongoose'],
   experimental: {
     webpackBuildWorker: true,
     parallelServerBuildTraces: true,
     parallelServerCompiles: true,
-    serverComponentsExternalPackages: ['mongoose'],
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
