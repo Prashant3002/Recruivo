@@ -185,19 +185,18 @@ export default function LoginPage() {
         localStorage.setItem('authToken', response.token || '');
         document.cookie = `isLoggedIn=true; path=/; max-age=${60 * 60 * 24 * 7}`; // 7 days
         
-        // Add a small delay to allow cookies to be set
-        setTimeout(() => {
-          // Force a reload and direct navigation to ensure clean state
-          if (role === 'student') {
-            window.location.href = '/student';
-          } else if (role === 'recruiter') {
-            window.location.href = '/recruiter';
-          } else if (role === 'admin') {
-            window.location.href = '/admin';
-          } else {
-            window.location.href = '/';
-          }
-        }, 500);
+        console.log("Redirecting to dashboard based on role:", role);
+        
+        // Force immediate navigation instead of using setTimeout
+        if (role === 'student') {
+          window.location.replace('/student');
+        } else if (role === 'recruiter') {
+          window.location.replace('/recruiter');
+        } else if (role === 'admin') {
+          window.location.replace('/admin');
+        } else {
+          window.location.replace('/');
+        }
       } else {
         // If no user in response, show error
         console.error("Login successful but no user data received");
