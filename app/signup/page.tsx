@@ -164,6 +164,7 @@ export default function SignupPage() {
                         <Input 
                           type={showPassword ? "text" : "password"} 
                           placeholder="Create a password" 
+                          autoComplete="new-password"
                           {...field} 
                         />
                         <Button
@@ -193,6 +194,7 @@ export default function SignupPage() {
                         <Input 
                           type={showConfirmPassword ? "text" : "password"} 
                           placeholder="Confirm your password" 
+                          autoComplete="new-password"
                           {...field} 
                         />
                         <Button
