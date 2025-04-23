@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Student = require('../models/Student');
+const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -114,7 +115,7 @@ router.post('/login', async (req, res) => {
  * @desc    Get student by ID
  * @access  Private
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const student = await Student.findById(req.params.id);
     
@@ -134,8 +135,13 @@ router.get('/:id', async (req, res) => {
  * @desc    Update student profile
  * @access  Private
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticate, async (req, res) => {
   try {
+    // Check if the authenticated user is the same as the requested student
+    if (req.user._id.toString() !== req.params.id && req.userType !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to update this profile' });
+    }
+    
     const { firstName, lastName, mobileNumber, gender, dateOfBirth, skills, education, resumeLink } = req.body;
     
     // Build student object
