@@ -24,10 +24,25 @@ const app = express();
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Set content type for all responses
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
+// Handle preflight requests
+app.options('*', cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/recruivo')
@@ -36,7 +51,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/recruivo'
 
 // Basic route
 app.get('/', (req, res) => {
-  res.send('Backend API is running');
+  res.status(200).json({ message: 'Backend API is running' });
 });
 
 // Use routes
@@ -81,6 +96,7 @@ app.post('/api/auth/register', async (req, res) => {
       token
     });
   } catch (error) {
+    console.error('Register error:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -119,18 +135,33 @@ app.post('/api/auth/login', async (req, res) => {
       token
     });
   } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({ message: error.message });
   }
 });
 
 // Protected route example
 app.get('/api/me', authenticate, async (req, res) => {
-  res.json({
+  res.status(200).json({
     id: req.user._id,
     name: req.user.name || `${req.user.firstName} ${req.user.lastName}`,
     email: req.user.email,
     role: req.user.role,
     userType: req.userType
+  });
+});
+
+// Handle 404 errors
+app.use((req, res) => {
+  res.status(404).json({ message: 'Endpoint not found' });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({
+    message: 'Server error',
+    error: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred'
   });
 });
 
