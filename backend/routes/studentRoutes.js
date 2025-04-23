@@ -15,10 +15,21 @@ router.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, email, password, mobileNumber, gender, dateOfBirth } = req.body;
 
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Please provide all required fields' 
+      });
+    }
+
     // Check if student already exists
     const existingStudent = await Student.findOne({ email });
     if (existingStudent) {
-      return res.status(400).json({ message: 'Student with this email already exists' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Student with this email already exists' 
+      });
     }
 
     // Create new student
@@ -44,6 +55,7 @@ router.post('/register', async (req, res) => {
 
     // Send response without password
     res.status(201).json({
+      success: true,
       student: {
         id: student._id,
         firstName: student.firstName,
@@ -58,7 +70,11 @@ router.post('/register', async (req, res) => {
     });
   } catch (error) {
     console.error('Student registration error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error during registration', 
+      error: error.message 
+    });
   }
 });
 
@@ -71,16 +87,30 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Validate required fields
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Please provide email and password' 
+      });
+    }
+
     // Check if student exists
     const student = await Student.findOne({ email }).select('+password');
     if (!student) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
     }
 
     // Check if password is correct
     const isMatch = await student.comparePassword(password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
     }
 
     // Generate JWT token
@@ -92,6 +122,7 @@ router.post('/login', async (req, res) => {
 
     // Send response without password
     res.status(200).json({
+      success: true,
       student: {
         id: student._id,
         firstName: student.firstName,
@@ -106,7 +137,11 @@ router.post('/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Student login error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error during login', 
+      error: error.message 
+    });
   }
 });
 
@@ -120,13 +155,32 @@ router.get('/:id', authenticate, async (req, res) => {
     const student = await Student.findById(req.params.id);
     
     if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Student not found' 
+      });
     }
 
-    res.json(student);
+    res.status(200).json({
+      success: true,
+      student
+    });
   } catch (error) {
     console.error('Get student error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    
+    // Check if error is due to invalid ID format
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid student ID format'
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while fetching student', 
+      error: error.message 
+    });
   }
 });
 
@@ -139,7 +193,10 @@ router.put('/:id', authenticate, async (req, res) => {
   try {
     // Check if the authenticated user is the same as the requested student
     if (req.user._id.toString() !== req.params.id && req.userType !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized to update this profile' });
+      return res.status(403).json({ 
+        success: false,
+        message: 'Not authorized to update this profile' 
+      });
     }
     
     const { firstName, lastName, mobileNumber, gender, dateOfBirth, skills, education, resumeLink } = req.body;
@@ -163,13 +220,41 @@ router.put('/:id', authenticate, async (req, res) => {
     );
 
     if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Student not found' 
+      });
     }
 
-    res.json(student);
+    res.status(200).json({
+      success: true,
+      student
+    });
   } catch (error) {
     console.error('Update student error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    
+    // Check if error is due to invalid ID format
+    if (error.kind === 'ObjectId') {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid student ID format'
+      });
+    }
+    
+    // Check for validation errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(err => err.message)
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while updating student', 
+      error: error.message 
+    });
   }
 });
 
