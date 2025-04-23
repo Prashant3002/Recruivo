@@ -17,32 +17,58 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          const response = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/login`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              email: credentials.email,
-              password: credentials.password
-            })
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            console.error("Auth failed:", error);
-            return null;
+          // Use a try/catch around the fetch to handle network errors
+          let response;
+          try {
+            response = await fetch(`${process.env.BACKEND_URL || 'http://localhost:5000'}/api/auth/login`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                email: credentials.email,
+                password: credentials.password
+              })
+            });
+          } catch (fetchError) {
+            console.error("Fetch error:", fetchError);
+            throw new Error(`Connection error: ${fetchError.message}`);
           }
 
-          const data = await response.json();
+          if (!response.ok) {
+            // Try to parse error as JSON, but handle HTML responses gracefully
+            let errorData;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              errorData = await response.json();
+              console.error("Auth failed:", errorData);
+            } else {
+              const text = await response.text();
+              console.error("Auth failed with non-JSON response:", text.substring(0, 100) + "...");
+              errorData = { message: "Server returned an invalid response" };
+            }
+            throw new Error(errorData.message || `HTTP error ${response.status}`);
+          }
+
+          // Verify JSON response
+          let data;
+          try {
+            data = await response.json();
+          } catch (jsonError) {
+            console.error("JSON parse error:", jsonError);
+            throw new Error("Failed to parse authentication response");
+          }
           
           if (!data.user) {
-            return null;
+            throw new Error("Invalid response format: missing user data");
           }
 
           // Return user with token
           return {
-            ...data.user,
+            id: data.user.id,
+            name: data.user.name,
+            email: data.user.email,
+            role: data.user.role,
             token: data.token,
           };
         } catch (error) {
