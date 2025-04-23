@@ -15,6 +15,9 @@ const User = require('./models/User');
 // Import routes
 const studentRoutes = require('./routes/studentRoutes');
 
+// Import middleware
+const { authenticate } = require('./middleware/auth');
+
 // Initialize Express app
 const app = express();
 
@@ -120,39 +123,14 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Auth middleware for protected routes
-const authenticate = async (req, res, next) => {
-  try {
-    // Get token from header
-    const token = req.headers.authorization?.split(' ')[1];
-    
-    if (!token) {
-      return res.status(401).json({ message: 'Not authorized, no token' });
-    }
-
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-    
-    // Add user to request
-    const user = await User.findById(decoded.id);
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-    
-    req.user = user;
-    next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Not authorized, token failed' });
-  }
-};
-
 // Protected route example
 app.get('/api/me', authenticate, async (req, res) => {
   res.json({
     id: req.user._id,
-    name: req.user.name,
+    name: req.user.name || `${req.user.firstName} ${req.user.lastName}`,
     email: req.user.email,
-    role: req.user.role
+    role: req.user.role,
+    userType: req.userType
   });
 });
 
