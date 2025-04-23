@@ -54,6 +54,18 @@ app.get('/', (req, res) => {
   res.status(200).json({ message: 'Backend API is running' });
 });
 
+// Test CORS endpoint
+app.get('/api/test-cors', (req, res) => {
+  res.status(200).json({ 
+    success: true, 
+    message: 'CORS is working correctly',
+    headers: {
+      'content-type': res.getHeader('content-type'),
+      'access-control-allow-origin': res.getHeader('access-control-allow-origin')
+    }
+  });
+});
+
 // Use routes
 app.use('/api/students', studentRoutes);
 
